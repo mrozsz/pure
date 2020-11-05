@@ -23,12 +23,14 @@
 # \e[K  => clears everything after the cursor on the current line
 # \e[2K => clear everything on the current line
 
+PURER_PROMPT_COMMAND_COUNT=0
+STATUS_COLOR='cyan'
 
 # Turns seconds into human readable time.
 # 165392 => 1d 21h 56m 32s
 # https://github.com/sindresorhus/pretty-time-zsh
 prompt_pure_human_time_to_var() {
-	local human total_seconds=$1 var=$2
+	local human=" [" total_seconds=$1 var=$2
 	local days=$(( total_seconds / 60 / 60 / 24 ))
 	local hours=$(( total_seconds / 60 / 60 % 24 ))
 	local minutes=$(( total_seconds / 60 % 60 ))
@@ -36,7 +38,7 @@ prompt_pure_human_time_to_var() {
 	(( days > 0 )) && human+="${days}d "
 	(( hours > 0 )) && human+="${hours}h "
 	(( minutes > 0 )) && human+="${minutes}m "
-	human+="${seconds}s"
+	human+="${seconds}s]"
 
 	# Store human readable time in a variable as specified by the caller
 	typeset -g "${var}"="${human}"
@@ -51,6 +53,23 @@ prompt_pure_check_cmd_exec_time() {
 	(( elapsed > ${PURE_CMD_MAX_EXEC_TIME:-5} )) && {
 		prompt_pure_human_time_to_var $elapsed "prompt_pure_cmd_exec_time"
 	}
+}
+
+prompt_pure_clear_screen() {
+	# enable output to terminal
+	zle -I
+	# clear screen and move cursor to (0, 0)
+	print -n '\e[2J\e[0;0H'
+	# reset command count to zero so we don't start with a blank line
+	PURER_PROMPT_COMMAND_COUNT=0
+	# print preprompt
+	prompt_pure_preprompt_render precmd
+}
+
+# set STATUS_COLOR: cyan for "insert", green for "normal" mode.
+prompt_purer_vim_mode() {
+	STATUS_COLOR="${${KEYMAP/vicmd/green}/(main|viins)/cyan}"
+	prompt_pure_preprompt_render
 }
 
 prompt_pure_set_title() {
@@ -92,10 +111,20 @@ prompt_pure_preexec() {
 		fi
 	fi
 
+	# @PURER
+	# attempt to detect and prevent prompt_pure_async_git_fetch from interfering with user initiated git or hub fetch
+	#[[ $2 =~ (git|hub)\ .*(pull|fetch) ]] && async_flush_jobs 'prompt_pure'
+
 	typeset -g prompt_pure_cmd_timestamp=$EPOCHSECONDS
 
 	# Shows the current directory and executed command in the title while a process is active.
 	prompt_pure_set_title 'ignore-escape' "$PWD:t: $2"
+
+	# Disallow python virtualenv from updating the prompt, set it to 12 if
+	# untouched by the user to indicate that Pure modified it. Here we use
+	# magic number 12, same as in psvar.
+	export VIRTUAL_ENV_DISABLE_PROMPT=${VIRTUAL_ENV_DISABLE_PROMPT:-12}
+}
 
 	# Disallow Python virtualenv from updating the prompt. Set it to 12 if
 	# untouched by the user to indicate that Pure modified it. Here we use
@@ -133,6 +162,60 @@ prompt_pure_preprompt_render() {
 
 	# Username and machine, if applicable.
 	[[ -n $prompt_pure_state[username] ]] && preprompt_parts+=($prompt_pure_state[username])
+	# store the current prompt_subst setting so that it can be restored later
+	local prompt_subst_status=$options[prompt_subst]
+
+	# make sure prompt_subst is unset to prevent parameter expansion in preprompt
+	setopt local_options no_prompt_subst
+
+	# check that no command is currently running, the preprompt will otherwise be rendered in the wrong place
+	[[ -n ${prompt_pure_cmd_timestamp+x} && "$1" != "precmd" ]] && return
+
+	# set color for git branch/dirty status, change color if dirty checking has been delayed
+	local git_color=242
+	[[ -n ${prompt_pure_git_last_dirty_check_timestamp+x} ]] && git_color=red
+
+	# construct preprompt
+	local preprompt=""
+
+
+	# add a newline between commands
+  FIRST_COMMAND_THRESHOLD=1
+  if [[ "$PURER_PROMPT_COMMAND_COUNT" -gt "$FIRST_COMMAND_THRESHOLD" ]]; then
+    preprompt+=$'\n'
+  fi
+
+	local symbol_color="%(?.${PURE_PROMPT_SYMBOL_COLOR:-magenta}.red)"
+	local path_formatting="${PURE_PROMPT_PATH_FORMATTING:-%c}"
+
+	# show background jobs
+	preprompt+="%(1j.%F{242}%j %f.)"
+	# show virtual env
+	preprompt+="%(12V.%F{242}%12v%f .)"
+	# begin with symbol, colored by previous command exit code
+	preprompt+="%F{$symbol_color}${PURE_PROMPT_SYMBOL:-❯}%f "
+	# directory, colored by vim status
+	preprompt+="%B%F{$STATUS_COLOR}$path_formatting%f%b"
+	# git info
+	preprompt+="%F{$git_color}${vcs_info_msg_0_}${prompt_pure_git_dirty}%f"
+	# git pull/push arrows
+	preprompt+="%F{cyan}${prompt_pure_git_arrows}%f"
+	# username and machine if applicable
+	preprompt+=$prompt_pure_username
+	# execution time
+	preprompt+="%B%F{242}${prompt_pure_cmd_exec_time}%f%b"
+
+	preprompt+=" "
+
+	# make sure prompt_pure_last_preprompt is a global array
+	typeset -g -a prompt_pure_last_preprompt
+
+	PROMPT="$preprompt"
+
+	# if executing through precmd, do not perform fancy terminal editing
+	if [[ "$1" != "precmd" ]]; then
+		# only redraw if the expanded preprompt has changed
+		# [[ "${prompt_pure_last_preprompt[2]}" != "${(S%%)preprompt}" ]] || return
 
 	# Set the path.
 	preprompt_parts+=('%F{${prompt_pure_colors[path]}}%~%f')
@@ -763,11 +846,11 @@ prompt_pure_setup() {
 	# Prevent percentage showing up if output doesn't end with a newline.
 	export PROMPT_EOL_MARK=''
 
-	prompt_opts=(subst percent)
+	# prompt_opts=(subst percent)
 
-	# Borrowed from `promptinit`. Sets the prompt options in case Pure was not
-	# initialized via `promptinit`.
-	setopt noprompt{bang,cr,percent,subst} "prompt${^prompt_opts[@]}"
+	# borrowed from promptinit, sets the prompt options in case pure was not
+	# initialized via promptinit.
+	# setopt noprompt{bang,cr,percent,subst} "prompt${^prompt_opts[@]}"
 
 	if [[ -z $prompt_newline ]]; then
 		# This variable needs to be set, usually set by promptinit.
@@ -864,6 +947,18 @@ prompt_pure_setup() {
 	# Guard against (ana)conda changing the PS1 prompt
 	# (we manually insert the env when it's available).
 	export CONDA_CHANGEPS1=no
+	# register custom function for vim-mode
+	zle -N zle-line-init prompt_purer_vim_mode
+	zle -N zle-keymap-select prompt_purer_vim_mode
+
+	# show username@host if logged in through SSH
+	[[ "$SSH_CONNECTION" != '' ]] && prompt_pure_username=' %F{242}%n@%m%f'
+
+	# show username@host if root, with username in white
+	[[ $UID -eq 0 ]] && prompt_pure_username=' %F{white}%n%f%F{242}@%m%f'
+
+	# create prompt
+	prompt_pure_preprompt_render 'precmd'
 }
 
 prompt_pure_setup "$@"
