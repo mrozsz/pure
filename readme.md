@@ -1,22 +1,28 @@
 # Purer
 
 > Pretty one-line ZSH prompt based on [@sindresorhus](https://github.)'s [Pure](https://github.com/sindresorhus/pure)
+and [@DFurnes](https://github.)'s [Purer](https://github.com/DFurnes/purer)
 
 ![purer](https://cloud.githubusercontent.com/assets/583202/25418314/c3a29bfa-2a18-11e7-8a6f-4c0960ccadfc.png)
 
+## Diff
+- remove newlines
+- remove spaces behind git branch
+- add '=' behind up-to-date git branch
+
 ## Install
 
-Can be installed with `npm` or [manually](https://github.com/sindresorhus/pure/blob/master/readme.md#manually). Requires Git 2.0.0+ and ZSH 5.2+.
-
-```sh
-$ npm install --global purer-prompt
-```
+Can be installed [manually](https://github.com/sindresorhus/pure/blob/master/readme.md#manually). Requires Git 2.0.0+ and ZSH 5.2+.
 
 Initialize the prompt system (if not so already) and choose `purer`:
 
 ```sh
 # .zshrc
+fpath+=$HOME/.zsh/purer
 autoload -U promptinit; promptinit
+# cutom config
+PURE_GIT_UP_ARROW=%F{208}%B⬆︎%b%f
+# init prompt
 prompt purer
 ```
 
