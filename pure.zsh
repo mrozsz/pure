@@ -131,13 +131,6 @@ prompt_pure_preprompt_render() {
 	# construct preprompt
 	local preprompt=""
 
-
-	# add a newline between commands
-  FIRST_COMMAND_THRESHOLD=1
-  if [[ "$PURER_PROMPT_COMMAND_COUNT" -gt "$FIRST_COMMAND_THRESHOLD" ]]; then
-    preprompt+=$'\n'
-  fi
-
 	local symbol_color="%(?.${PURE_PROMPT_SYMBOL_COLOR:-magenta}.red)"
 	local path_formatting="${PURE_PROMPT_PATH_FORMATTING:-%c}"
 
@@ -314,7 +307,7 @@ prompt_pure_check_git_arrows() {
 	(( left > 0 )) && arrows+=${PURE_GIT_UP_ARROW:-⇡}
 
 	[[ -n $arrows ]] || return
-	typeset -g REPLY=" $arrows"
+	typeset -g REPLY="$arrows"
 }
 
 prompt_pure_async_callback() {
@@ -325,7 +318,11 @@ prompt_pure_async_callback() {
 		prompt_pure_async_git_dirty)
 			local prev_dirty=$prompt_pure_git_dirty
 			if (( code == 0 )); then
-				prompt_pure_git_dirty=
+				prompt_pure_git_dirty=""
+
+				if [[ $prompt_pure_git_arrows == "" ]]; then
+					prompt_pure_git_dirty="="
+				fi
 			else
 				prompt_pure_git_dirty="*"
 			fi
