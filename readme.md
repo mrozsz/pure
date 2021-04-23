@@ -184,6 +184,21 @@ zstyle :prompt:pure:git:stash show yes
 prompt pure
 ```
 
+```sh
+autoload -U promptinit; promptinit
+PURE_GIT_UP_ARROW=↑
+PURE_GIT_DOWN_ARROW=↓
+# promt colors
+zstyle :prompt:pure:prompt:success color green
+zstyle :prompt:pure:path color cyan
+zstyle :prompt:pure:git:dirty color 242
+zstyle :prompt:pure:git:arrow color 172
+zstyle :prompt:pure:git:stash color 172
+# turn on git stash status
+zstyle :prompt:pure:git:stash show yes 
+prompt pure
+```
+
 ## Tips
 
 In the screenshot you see Pure running in [Hyper](https://hyper.is) with the [hyper-snazzy](https://github.com/sindresorhus/hyper-snazzy) theme and Menlo font.
